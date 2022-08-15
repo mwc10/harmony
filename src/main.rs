@@ -1,5 +1,5 @@
 fn print_usage() {
-    println!("{} <DIRECTORY>", env!("CARGO_BIN_NAME"))
+    println!("{} <INPUT DIRECTORY>", env!("CARGO_BIN_NAME"))
 }
 
 fn main() {
@@ -13,7 +13,12 @@ fn main() {
 }
 
 fn print_found_files(dir: &str) {
-    for (p, info) in harmony::find_harmony_datafiles(dir) {
-        println!("{}\n{:#?}\n", p.display(), info);
-    }
+    // for (p, info) in harmony::collect_harmony_datafiles(dir) {
+    //     println!("{}\n{:#?}\n", p.display(), info);
+    // }
+
+    let files = harmony::iterate_harmony_datafiles(dir)
+        .filter(|m| m.population.is_some())
+        .collect::<Vec<_>>();
+    harmony::combine_files(&files);
 }
