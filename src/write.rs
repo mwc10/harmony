@@ -5,16 +5,16 @@ use std::{
     io::{self, BufRead, BufReader, Write},
     ops::Deref,
     path::Path,
-    rc::Rc,
+    sync::Arc,
 };
 
 use crate::info::HarmonyMetadata;
 
-pub fn combine_files(metadata: &[HarmonyMetadata]) {
+pub fn combine_files(mut out: impl Write, metadata: &[HarmonyMetadata]) -> io::Result<()> {
     let test = combine_headers(metadata);
     // println!("{:#?}", test);
-    let mut stdout = io::stdout().lock();
-    write_output(&mut stdout, metadata, test).expect("no io errors plz");
+    // let mut stdout = io::stdout().lock();
+    write_output(&mut out, metadata, test)
 }
 
 // combine all headers to find all columns
@@ -27,9 +27,9 @@ pub fn combine_files(metadata: &[HarmonyMetadata]) {
 fn combine_headers(metadata: &[HarmonyMetadata]) -> Option<Combined> {
     let mut iter = metadata
         .iter()
-        .map(|m| m.headers.iter().map(Rc::clone).collect::<HashSet<_>>());
+        .map(|m| m.headers.iter().map(Arc::clone).collect::<HashSet<_>>());
     if let Some(base) = iter.next() {
-        let differences: HashSet<Rc<str>> = iter.fold(HashSet::new(), |mut diffs, other| {
+        let differences: HashSet<Arc<str>> = iter.fold(HashSet::new(), |mut diffs, other| {
             diffs.extend(base.symmetric_difference(&other).cloned());
             diffs
         });
@@ -81,7 +81,7 @@ fn combine_headers(metadata: &[HarmonyMetadata]) -> Option<Combined> {
 
 #[derive(Debug)]
 struct Combined {
-    hdr: Vec<Rc<str>>,
+    hdr: Vec<Arc<str>>,
     maps: Vec<Vec<usize>>,
 }
 

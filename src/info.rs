@@ -1,6 +1,6 @@
 use std::{
     path::{Path, PathBuf},
-    rc::Rc,
+    sync::Arc,
 };
 
 use crate::utils::{read_lines, StrIntern};
@@ -9,14 +9,14 @@ use walkdir::{DirEntry, WalkDir};
 #[derive(Debug, Clone)]
 pub struct HarmonyMetadata {
     pub path: PathBuf,
-    pub db_name: Rc<str>,
-    pub db_location: Rc<str>,
+    pub db_name: Arc<str>,
+    pub db_location: Arc<str>,
     pub eval_sig: String,
     pub plate_name: String,
     pub measurement: u32,
     pub evaluation: u32,
-    pub population: Option<Rc<str>>,
-    pub headers: Vec<Rc<str>>,
+    pub population: Option<Arc<str>>,
+    pub headers: Vec<Arc<str>>,
     /// line of first data row
     pub data_start: u8,
 }
@@ -46,14 +46,14 @@ fn is_possible_harmony(f: &DirEntry) -> bool {
 
 #[derive(Debug, Default)]
 struct CollectMetadata {
-    db_name: Option<Rc<str>>,
-    db_location: Option<Rc<str>>,
+    db_name: Option<Arc<str>>,
+    db_location: Option<Arc<str>>,
     eval_sig: Option<String>,
     plate_name: Option<String>,
     measurement: Option<u32>,
     evaluation: Option<u32>,
-    population: Option<Rc<str>>,
-    headers: Option<Vec<Rc<str>>>,
+    population: Option<Arc<str>>,
+    headers: Option<Vec<Arc<str>>>,
     data_start: Option<u8>,
 }
 
