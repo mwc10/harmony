@@ -2,15 +2,18 @@
 
 use std::fs::File;
 use std::io::BufWriter;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use druid::im::{Vector, HashSet};
 
-use druid::widget::{Align, Button, Flex, Label, Either, List, Scroll, LineBreaking, Checkbox, SizedBox, Spinner, MainAxisAlignment};
+use druid::im::{HashSet, Vector};
+use druid::widget::{
+    Align, Button, Checkbox, Either, Flex, Label, LineBreaking, List, MainAxisAlignment, Scroll,
+    SizedBox, Spinner,
+};
 use druid::{
-    lens,
-    commands, AppDelegate, AppLauncher, Command, DelegateCtx, Env, FileDialogOptions,
-    Handled, LocalizedString, Target, Widget, WindowDesc, Lens, Data, UnitPoint, Selector, WidgetExt, LensExt, FileSpec,
+    commands, lens, AppDelegate, AppLauncher, Command, Data, DelegateCtx, Env, FileDialogOptions,
+    FileSpec, Handled, Lens, LensExt, LocalizedString, Selector, Target, UnitPoint, Widget,
+    WidgetExt, WindowDesc,
 };
 use harmony::HarmonyMetadata;
 
@@ -59,12 +62,12 @@ impl Default for Combining {
 
 fn main() {
     let main_window = WindowDesc::new(ui_builder())
-        .title(LocalizedString::new("harmony-data-combiner")
-            .with_placeholder("Harmony Data Combiner")
+        .title(
+            LocalizedString::new("harmony-data-combiner").with_placeholder("Harmony Data Combiner"),
         )
         .window_size((800.0, 600.0));
     let data = State::default();
-    
+
     AppLauncher::with_window(main_window)
         .delegate(Delegate)
         .log_to_console()
@@ -82,9 +85,9 @@ fn ui_builder() -> impl Widget<State> {
             Either::new(
                 |state, _env| state.combining == Combining::Not,
                 ui_select_files(),
-                ui_running_combiner()
-            )
-        )
+                ui_running_combiner(),
+            ),
+        ),
     )
 }
 
@@ -105,7 +108,7 @@ fn ui_picker() -> impl Widget<State> {
     col.add_child(instructions);
     col.add_default_spacer();
     col.add_child(open);
-    
+
     Align::centered(col)
 }
 
@@ -128,11 +131,16 @@ impl AppDelegate<State> for Delegate {
             }
             Handled::Yes
         } else if let Some(info) = cmd.get(FOUND_FILE).cloned() {
-            // not perfect for utf8, but it hopefully it's always be longer than 
+            // not perfect for utf8, but it hopefully it's always be longer than
             // the number of graphemes
             let n = info.plate_name.len();
             data.longest_pname = data.longest_pname.max(n);
-            data.found_pops.insert(info.population.as_ref().cloned().unwrap_or_else(|| Arc::from("Well Data")));
+            data.found_pops.insert(
+                info.population
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| Arc::from("Well Data")),
+            );
             data.found_files.push_back(info);
 
             Handled::Yes
@@ -140,28 +148,25 @@ impl AppDelegate<State> for Delegate {
             data.files = Some(files);
             Handled::Yes
         } else if let Some(pop) = cmd.get(FILTER_POP) {
-            data.found_files
-                .iter_mut()
-                .for_each(|f| {
-                    f.include = if pop.as_ref() == "Well Data" {
-                        f.population.is_none()
-                    } else {
-                        f.population.as_ref().map_or(false, |p| p == pop)
-                    }
-                });
+            data.found_files.iter_mut().for_each(|f| {
+                f.include = if pop.as_ref() == "Well Data" {
+                    f.population.is_none()
+                } else {
+                    f.population.as_ref().map_or(false, |p| p == pop)
+                }
+            });
             Handled::Yes
         } else if let Some(f) = cmd.get(commands::SAVE_FILE_AS) {
             data.output = Some(f.path.clone());
             Handled::Yes
-        } else if cmd.is(START_COMBINE){
-            let files = data.files.as_ref()
-                .map(|fs| 
-                    fs.iter()
-                        .zip(data.found_files.iter().map(|f| f.include))
-                        .filter(|(_, inc)| *inc)
-                        .map(|(md, _)| md.clone())
-                        .collect::<Vec<_>>()
-            );
+        } else if cmd.is(START_COMBINE) {
+            let files = data.files.as_ref().map(|fs| {
+                fs.iter()
+                    .zip(data.found_files.iter().map(|f| f.include))
+                    .filter(|(_, inc)| *inc)
+                    .map(|(md, _)| md.clone())
+                    .collect::<Vec<_>>()
+            });
             match (files, data.output.as_ref()) {
                 (Some(fs), Some(out)) => {
                     data.combining = Combining::Running;
@@ -169,7 +174,7 @@ impl AppDelegate<State> for Delegate {
                     let out = out.clone();
                     std::thread::spawn(move || combine_harmony_files(out, fs, sink));
                 }
-                _ => ()
+                _ => (),
             }
             Handled::Yes
         } else if cmd.is(FINISH_COMBINE) {
@@ -182,9 +187,13 @@ impl AppDelegate<State> for Delegate {
 }
 
 fn ui_finding_files() -> impl Widget<State> {
-    let count = Label::dynamic(
-        |state: &State, _| format!("found {} file{}", state.found_files.len(), plural(state.found_files.len()))
-    );
+    let count = Label::dynamic(|state: &State, _| {
+        format!(
+            "found {} file{}",
+            state.found_files.len(),
+            plural(state.found_files.len())
+        )
+    });
 
     let col = Flex::column()
         .with_child(Label::new("Searching for files..."))
@@ -202,35 +211,29 @@ fn ui_select_files() -> impl Widget<State> {
         } else {
             format!("Found {} file{}", n, plural(n))
         }
-    }).with_line_break_mode(LineBreaking::WordWrap);
+    })
+    .with_line_break_mode(LineBreaking::WordWrap);
 
     // todo: constant for naming None population
-    let pop_toggle = List::new(
-        || Button::dynamic(|s: &Arc<str>, _| s.to_string())
-            .on_click(|ctx, s, _| {
-                let cmd = Command::new(FILTER_POP, s.clone(), Target::Auto);
-                ctx.submit_command(cmd)
-            })
-    )
+    let pop_toggle = List::new(|| {
+        Button::dynamic(|s: &Arc<str>, _| s.to_string()).on_click(|ctx, s, _| {
+            let cmd = Command::new(FILTER_POP, s.clone(), Target::Auto);
+            ctx.submit_command(cmd)
+        })
+    })
     .with_spacing(2.0)
     .horizontal()
-    .lens(
-        State::found_pops
-            .map(
-                |hs| {
-                    let mut v = hs.iter().cloned().collect::<Vector<_>>();
-                    v.sort();
-                    v
-                },
-                |vs, hs| *vs = hs.into()
-            )
-    );
+    .lens(State::found_pops.map(
+        |hs| {
+            let mut v = hs.iter().cloned().collect::<Vector<_>>();
+            v.sort();
+            v
+        },
+        |vs, hs| *vs = hs.into(),
+    ));
 
-    let files = Scroll::new(
-        List::new(plate_selector)
-        .with_spacing(4.0)
-    )
-    .lens((State::longest_pname, State::found_files));
+    let files = Scroll::new(List::new(plate_selector).with_spacing(4.0))
+        .lens((State::longest_pname, State::found_files));
 
     let tsv = FileSpec::new("TSV File", &["tsv", "txt"]);
     let default_name = "combined-data.tsv";
@@ -241,10 +244,9 @@ fn ui_select_files() -> impl Widget<State> {
         .name_label("Output Filename")
         .title("Select file for output")
         .button_text("Select");
-    let save = Button::new("Select File for Output")
-        .on_click(move |ctx, _, _| {
-            ctx.submit_command(commands::SHOW_SAVE_PANEL.with(save_options.clone()))
-        });
+    let save = Button::new("Select File for Output").on_click(move |ctx, _, _| {
+        ctx.submit_command(commands::SHOW_SAVE_PANEL.with(save_options.clone()))
+    });
 
     let display_out = Label::dynamic(|s: &State, _| {
         if let Some(p) = s.output.as_deref() {
@@ -252,16 +254,15 @@ fn ui_select_files() -> impl Widget<State> {
         } else {
             format!("Output not selected")
         }
-    }).with_line_break_mode(LineBreaking::WordWrap);
+    })
+    .with_line_break_mode(LineBreaking::WordWrap);
 
-    let run = Button::dynamic(
-            |s: &State, _| {
-                let n = s.count_included_files();
-                format!("Combine {} File{}", n, plural(n))
-            }
-        )
-        .on_click(|ctx, _, _| ctx.submit_command(START_COMBINE))
-        .disabled_if(|s: &State, _| s.output.is_none());
+    let run = Button::dynamic(|s: &State, _| {
+        let n = s.count_included_files();
+        format!("Combine {} File{}", n, plural(n))
+    })
+    .on_click(|ctx, _, _| ctx.submit_command(START_COMBINE))
+    .disabled_if(|s: &State, _| s.output.is_none());
 
     Flex::column()
         .with_default_spacer()
@@ -282,7 +283,8 @@ fn ui_select_files() -> impl Widget<State> {
 
 const FILTER_POP: Selector<Arc<str>> = Selector::new("app.files.filter-population");
 const FOUND_FILE: Selector<FileInfo> = Selector::new("app.harmony.found-file");
-const FINISHED_SEARCHING: Selector<Arc<[HarmonyMetadata]>> = Selector::new("app.harmony.search-done");
+const FINISHED_SEARCHING: Selector<Arc<[HarmonyMetadata]>> =
+    Selector::new("app.harmony.search-done");
 const START_COMBINE: Selector<()> = Selector::new("app.harmony.combine-start");
 const FINISH_COMBINE: Selector<()> = Selector::new("app.harmony.combine-finish");
 
@@ -303,22 +305,25 @@ fn find_harmony_files(dir: PathBuf, sink: druid::ExtEventSink) {
         out.push(md);
     }
 
-    sink.submit_command(FINISHED_SEARCHING, Arc::from(out), Target::Auto).expect("please work");
+    sink.submit_command(FINISHED_SEARCHING, Arc::from(out), Target::Auto)
+        .expect("please work");
 }
 
 // fn combine_harmony_files(md: Arc<[HarmonyMetadata], sink: druid::ExtEventSink)
 
 fn plate_selector() -> impl Widget<(usize, FileInfo)> {
     let include = Checkbox::new("").lens(lens!((usize, FileInfo), 1).then(FileInfo::include));
-    let label = Label::dynamic(move |(w, i): &(usize, FileInfo), _| 
-        format!("{:<width$}\t|   M{}   |   E{}   |   {}", 
+    let label = Label::dynamic(move |(w, i): &(usize, FileInfo), _| {
+        format!(
+            "{:<width$}\t|   M{}   |   E{}   |   {}",
             i.plate_name,
             i.measurement,
             i.evaluation,
             i.population.as_deref().unwrap_or("Well Data"),
             width = w
         )
-    ).on_click(|_ctx, state, _env| state.1.include = !state.1.include);
+    })
+    .on_click(|_ctx, state, _env| state.1.include = !state.1.include);
 
     Flex::row()
         .with_child(include)
@@ -328,15 +333,11 @@ fn plate_selector() -> impl Widget<(usize, FileInfo)> {
 
 fn ui_running_combiner() -> impl Widget<State> {
     let running = {
-        let spinner = SizedBox::new(Spinner::new())
-            .width(100.0)
-            .height(100.0);
-        let label = Label::dynamic(
-            |s: &State, _| {
-                let n = s.found_files.iter().filter(|f| f.include).count();
-                format!("Combining {} file{}", n, plural(n))
-            }
-        );
+        let spinner = SizedBox::new(Spinner::new()).width(100.0).height(100.0);
+        let label = Label::dynamic(|s: &State, _| {
+            let n = s.found_files.iter().filter(|f| f.include).count();
+            format!("Combining {} file{}", n, plural(n))
+        });
         Flex::column()
             .with_child(label)
             .with_default_spacer()
@@ -345,8 +346,8 @@ fn ui_running_combiner() -> impl Widget<State> {
     };
     let finished = {
         let notice = Label::new("Combining Finished! Start Again? Set Timer to go back?");
-        let back = Button::new("Go Back")
-            .on_click(|_, s: &mut State, _| s.combining = Combining::Not);
+        let back =
+            Button::new("Go Back").on_click(|_, s: &mut State, _| s.combining = Combining::Not);
 
         Flex::column()
             .with_child(notice)
@@ -355,21 +356,24 @@ fn ui_running_combiner() -> impl Widget<State> {
             .center()
     };
 
-    Either::new(
-        |s, _| s.combining == Combining::Running,
-        running,
-        finished
-    )
+    Either::new(|s, _| s.combining == Combining::Running, running, finished)
 }
 
-// todo: create error 
+// todo: create error
 fn combine_harmony_files(out: PathBuf, files: Vec<HarmonyMetadata>, sink: druid::ExtEventSink) {
-    let wtr = File::create(out).map(BufWriter::new).expect("Create file for output");
+    let wtr = File::create(out)
+        .map(BufWriter::new)
+        .expect("Create file for output");
     harmony::combine_files(wtr, &files).expect("Combine data into output");
 
-    sink.submit_command(FINISH_COMBINE, (), Target::Auto).expect("send finish combine cmd");
+    sink.submit_command(FINISH_COMBINE, (), Target::Auto)
+        .expect("send finish combine cmd");
 }
 
 const fn plural(n: usize) -> &'static str {
-    if n == 1 { "" } else { "s" }
+    if n == 1 {
+        ""
+    } else {
+        "s"
+    }
 }
