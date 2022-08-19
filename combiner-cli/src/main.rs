@@ -20,5 +20,7 @@ fn print_found_files(dir: &str) {
     let files = harmony::iterate_harmony_datafiles(dir)
         .filter(|m| m.population.is_some())
         .collect::<Vec<_>>();
-    harmony::combine_files(&files);
+
+    let stdout = std::io::stdout().lock();
+    harmony::combine_files(stdout, &files).unwrap();
 }
