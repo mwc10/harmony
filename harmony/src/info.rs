@@ -39,9 +39,6 @@ pub fn collect_harmony_datafiles<P: AsRef<Path>>(dir: P) -> Vec<HarmonyMetadata>
 fn is_possible_harmony(f: &DirEntry) -> bool {
     f.file_type().is_file()
         && f.path().extension().map_or(false, |ext| ext == "txt")
-        && f.path().file_stem().map_or(false, |stem| {
-            stem == "PlateResults" || stem.to_string_lossy().starts_with("Objects_Population")
-        })
 }
 
 #[derive(Debug, Default)]
@@ -146,7 +143,8 @@ fn process_metadata_kv(
         "Measurement" => store.measurement = value.split(" ").nth(1).and_then(|s| s.parse().ok()),
         "Evaluation" => store.evaluation = value[10..].parse().ok(),
         "Population" => store.population = Some(value.into()),
-        _ => (),
+        // are these all of the valid keys?
+        _ => return None,
     }
 
     Some(())
