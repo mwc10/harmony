@@ -194,9 +194,13 @@ fn ui_finding_files() -> impl Widget<State> {
             plural(state.found_files.len())
         )
     });
+    let spinner = SizedBox::new(Spinner::new()).width(100.0).height(100.0);
 
     let col = Flex::column()
+        .with_default_spacer()
         .with_child(Label::new("Searching for files..."))
+        .with_default_spacer()
+        .with_child(spinner)
         .with_default_spacer()
         .with_child(count);
 
@@ -213,6 +217,16 @@ fn ui_select_files() -> impl Widget<State> {
         }
     })
     .with_line_break_mode(LineBreaking::WordWrap);
+
+    // all / none toggles
+    let toggle_on = Button::new("Select All")
+        .on_click(|_, s: &mut State, _| s.found_files.iter_mut().for_each(|f| f.include = true));
+    let toggle_off = Button::new("Deselect All")
+        .on_click(|_, s: &mut State, _| s.found_files.iter_mut().for_each(|f| f.include = false));
+    let all_toggles = Flex::row()
+        .with_child(toggle_on)
+        .with_default_spacer()
+        .with_child(toggle_off);
 
     // todo: constant for naming None population
     let pop_toggle = List::new(|| {
@@ -268,6 +282,8 @@ fn ui_select_files() -> impl Widget<State> {
         .with_default_spacer()
         .with_child(info)
         .with_default_spacer()
+        .with_child(all_toggles)
+        .with_spacer(0.5)
         .with_child(pop_toggle)
         .with_default_spacer()
         .with_flex_child(files, 1.0)
@@ -339,9 +355,9 @@ fn ui_running_combiner() -> impl Widget<State> {
             format!("Combining {} file{}", n, plural(n))
         });
         Flex::column()
-            .with_child(label)
-            .with_default_spacer()
             .with_child(spinner)
+            .with_default_spacer()
+            .with_child(label)
             .center()
     };
     let finished = {
