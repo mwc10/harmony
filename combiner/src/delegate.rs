@@ -26,8 +26,10 @@ impl AppDelegate<State> for Delegate {
             if file_info.path.is_dir() {
                 let sink = ctx.get_external_handle();
                 let dir = file_info.path.clone();
+                // restart the whole chain by discarding any prior data
+                // todo: druid_enum ...
+                *data = State::default();
                 data.input_dir = Some(dir.clone());
-                // start command here?
                 std::thread::spawn(move || find_harmony_files(dir, sink));
             }
             Handled::Yes

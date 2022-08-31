@@ -63,7 +63,7 @@ fn main() {
         .title(
             LocalizedString::new("harmony-data-combiner").with_placeholder("Harmony Data Combiner"),
         )
-        .window_size((800.0, 600.0));
+        .window_size((800.0, 650.0));
     let data = State::default();
 
     AppLauncher::with_window(main_window)
@@ -89,23 +89,26 @@ fn ui_builder() -> impl Widget<State> {
     )
 }
 
-fn ui_picker() -> impl Widget<State> {
+fn el_open_file_picker(title: &str) -> impl Widget<State> {
     let open_dialog_options = FileDialogOptions::new()
         .select_directories()
         .name_label("Directory with Exported Harmony Data")
         .title("Select a directory to combine exported Harmony data")
         .button_text("Select");
 
-    let open = Button::new("Select Data").on_click(move |ctx, _, _| {
+    Button::new(title).on_click(move |ctx, _, _| {
         ctx.submit_command(commands::SHOW_OPEN_PANEL.with(open_dialog_options.clone()))
-    });
+    })
+}
 
+fn ui_picker() -> impl Widget<State> {
     let instructions = Label::new("Select a directory containing exported Harmony data:");
+    let open_btn = el_open_file_picker("Select Data");
 
     let mut col = Flex::column();
     col.add_child(instructions);
     col.add_default_spacer();
-    col.add_child(open);
+    col.add_child(open_btn);
 
     Align::centered(col)
 }
@@ -143,9 +146,9 @@ fn ui_select_files() -> impl Widget<State> {
     .with_line_break_mode(LineBreaking::WordWrap);
 
     // all / none toggles
-    let toggle_on = Button::new("Select All")
+    let toggle_on = Button::new("Select All Files")
         .on_click(|_, s: &mut State, _| s.found_files.iter_mut().for_each(|f| f.include = true));
-    let toggle_off = Button::new("Deselect All")
+    let toggle_off = Button::new("Deselect All Files")
         .on_click(|_, s: &mut State, _| s.found_files.iter_mut().for_each(|f| f.include = false));
     let all_toggles = Flex::row()
         .with_child(toggle_on)
@@ -202,9 +205,16 @@ fn ui_select_files() -> impl Widget<State> {
     .on_click(|ctx, _, _| ctx.submit_command(crate::cmd::START_COMBINE))
     .disabled_if(|s: &State, _| s.output.is_none());
 
+    let try_again = el_open_file_picker("Pick Different Directory to Search");
+    let table_title = Label::new("Choose Files to Combine").with_text_size(22.0);
+
     Flex::column()
         .with_default_spacer()
         .with_child(info)
+        .with_default_spacer()
+        .with_child(try_again)
+        .with_spacer(18.0)
+        .with_child(table_title)
         .with_default_spacer()
         .with_child(all_toggles)
         .with_spacer(0.5)
