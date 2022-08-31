@@ -1,7 +1,5 @@
 #![windows_subsystem = "windows"]
 
-use std::fs::File;
-use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -11,13 +9,13 @@ use druid::widget::{
     SizedBox, Spinner,
 };
 use druid::{
-    commands, lens, AppDelegate, AppLauncher, Command, Data, DelegateCtx, Env, FileDialogOptions,
-    FileSpec, Handled, Lens, LensExt, LocalizedString, Selector, Target, UnitPoint, Widget,
-    WidgetExt, WindowDesc,
+    commands, lens, AppLauncher, Command, Data, FileDialogOptions, FileSpec, Lens, LensExt,
+    LocalizedString, Target, TextAlignment, UnitPoint, Widget, WidgetExt, WindowDesc,
 };
 use harmony::HarmonyMetadata;
 
-struct Delegate;
+mod cmd;
+mod delegate;
 
 #[derive(Clone, Data, Lens, Default)]
 struct State {
@@ -69,7 +67,7 @@ fn main() {
     let data = State::default();
 
     AppLauncher::with_window(main_window)
-        .delegate(Delegate)
+        .delegate(delegate::Delegate)
         .log_to_console()
         .launch(data)
         .expect("launch failed");
@@ -110,80 +108,6 @@ fn ui_picker() -> impl Widget<State> {
     col.add_child(open);
 
     Align::centered(col)
-}
-
-impl AppDelegate<State> for Delegate {
-    fn command(
-        &mut self,
-        ctx: &mut DelegateCtx,
-        _target: Target,
-        cmd: &Command,
-        data: &mut State,
-        _env: &Env,
-    ) -> Handled {
-        if let Some(file_info) = cmd.get(commands::OPEN_FILE) {
-            if file_info.path.is_dir() {
-                let sink = ctx.get_external_handle();
-                let dir = file_info.path.clone();
-                data.input_dir = Some(dir.clone());
-                // start command here?
-                std::thread::spawn(move || find_harmony_files(dir, sink));
-            }
-            Handled::Yes
-        } else if let Some(info) = cmd.get(FOUND_FILE).cloned() {
-            // not perfect for utf8, but it hopefully it's always be longer than
-            // the number of graphemes
-            let n = info.plate_name.len();
-            data.longest_pname = data.longest_pname.max(n);
-            data.found_pops.insert(
-                info.population
-                    .as_ref()
-                    .cloned()
-                    .unwrap_or_else(|| Arc::from("Well Data")),
-            );
-            data.found_files.push_back(info);
-
-            Handled::Yes
-        } else if let Some(files) = cmd.get(FINISHED_SEARCHING).cloned() {
-            data.files = Some(files);
-            Handled::Yes
-        } else if let Some(pop) = cmd.get(FILTER_POP) {
-            data.found_files.iter_mut().for_each(|f| {
-                f.include = if pop.as_ref() == "Well Data" {
-                    f.population.is_none()
-                } else {
-                    f.population.as_ref().map_or(false, |p| p == pop)
-                }
-            });
-            Handled::Yes
-        } else if let Some(f) = cmd.get(commands::SAVE_FILE_AS) {
-            data.output = Some(f.path.clone());
-            Handled::Yes
-        } else if cmd.is(START_COMBINE) {
-            let files = data.files.as_ref().map(|fs| {
-                fs.iter()
-                    .zip(data.found_files.iter().map(|f| f.include))
-                    .filter(|(_, inc)| *inc)
-                    .map(|(md, _)| md.clone())
-                    .collect::<Vec<_>>()
-            });
-            match (files, data.output.as_ref()) {
-                (Some(fs), Some(out)) => {
-                    data.combining = Combining::Running;
-                    let sink = ctx.get_external_handle();
-                    let out = out.clone();
-                    std::thread::spawn(move || combine_harmony_files(out, fs, sink));
-                }
-                _ => (),
-            }
-            Handled::Yes
-        } else if cmd.is(FINISH_COMBINE) {
-            data.combining = Combining::Completed;
-            Handled::Yes
-        } else {
-            Handled::No
-        }
-    }
 }
 
 fn ui_finding_files() -> impl Widget<State> {
@@ -231,7 +155,7 @@ fn ui_select_files() -> impl Widget<State> {
     // todo: constant for naming None population
     let pop_toggle = List::new(|| {
         Button::dynamic(|s: &Arc<str>, _| s.to_string()).on_click(|ctx, s, _| {
-            let cmd = Command::new(FILTER_POP, s.clone(), Target::Auto);
+            let cmd = Command::new(crate::cmd::FILTER_POP, s.clone(), Target::Auto);
             ctx.submit_command(cmd)
         })
     })
@@ -246,7 +170,7 @@ fn ui_select_files() -> impl Widget<State> {
         |vs, hs| *vs = hs.into(),
     ));
 
-    let files = Scroll::new(List::new(plate_selector).with_spacing(4.0))
+    let files = Scroll::new(List::new(el_plate_selector).with_spacing(4.0))
         .lens((State::longest_pname, State::found_files));
 
     let tsv = FileSpec::new("TSV File", &["tsv", "txt"]);
@@ -275,7 +199,7 @@ fn ui_select_files() -> impl Widget<State> {
         let n = s.count_included_files();
         format!("Combine {} File{}", n, plural(n))
     })
-    .on_click(|ctx, _, _| ctx.submit_command(START_COMBINE))
+    .on_click(|ctx, _, _| ctx.submit_command(crate::cmd::START_COMBINE))
     .disabled_if(|s: &State, _| s.output.is_none());
 
     Flex::column()
@@ -297,37 +221,7 @@ fn ui_select_files() -> impl Widget<State> {
         .main_axis_alignment(MainAxisAlignment::SpaceEvenly)
 }
 
-const FILTER_POP: Selector<Arc<str>> = Selector::new("app.files.filter-population");
-const FOUND_FILE: Selector<FileInfo> = Selector::new("app.harmony.found-file");
-const FINISHED_SEARCHING: Selector<Arc<[HarmonyMetadata]>> =
-    Selector::new("app.harmony.search-done");
-const START_COMBINE: Selector<()> = Selector::new("app.harmony.combine-start");
-const FINISH_COMBINE: Selector<()> = Selector::new("app.harmony.combine-finish");
-
-fn find_harmony_files(dir: PathBuf, sink: druid::ExtEventSink) {
-    // probably better to switch to an im::Vector to provide realtime updates
-    let mut out = Vec::new();
-    for md in harmony::iterate_harmony_datafiles(dir) {
-        let info = FileInfo {
-            plate_name: md.plate_name.clone(),
-            measurement: md.measurement,
-            evaluation: md.evaluation,
-            population: md.population.clone(),
-            include: true,
-        };
-
-        sink.submit_command(FOUND_FILE, info, Target::Auto)
-            .expect("please don't panic I don't know what I'm doing");
-        out.push(md);
-    }
-
-    sink.submit_command(FINISHED_SEARCHING, Arc::from(out), Target::Auto)
-        .expect("please work");
-}
-
-// fn combine_harmony_files(md: Arc<[HarmonyMetadata], sink: druid::ExtEventSink)
-
-fn plate_selector() -> impl Widget<(usize, FileInfo)> {
+fn el_plate_selector() -> impl Widget<(usize, FileInfo)> {
     let include = Checkbox::new("").lens(lens!((usize, FileInfo), 1).then(FileInfo::include));
     let label = Label::dynamic(move |(w, i): &(usize, FileInfo), _| {
         format!(
@@ -361,29 +255,30 @@ fn ui_running_combiner() -> impl Widget<State> {
             .center()
     };
     let finished = {
-        let notice = Label::new("Combining Finished! Start Again? Set Timer to go back?");
-        let back =
-            Button::new("Go Back").on_click(|_, s: &mut State, _| s.combining = Combining::Not);
+        let notice = Label::dynamic(|s: &State, _| {
+            if let Some(outpath) = s.output.as_deref() {
+                format!("Finished\nSaved to:\n{}", outpath.display())
+            } else {
+                format!("Finished")
+            }
+        })
+        .with_text_alignment(TextAlignment::Center)
+        .with_line_break_mode(LineBreaking::WordWrap);
+        let back = Button::new("Go Back to Combine Other Files")
+            .on_click(|_, s: &mut State, _| s.combining = Combining::Not);
+        let restart = Button::new("Choose Another Starting Directory")
+            .on_click(|_, s: &mut State, _| *s = State::default());
 
         Flex::column()
             .with_child(notice)
             .with_default_spacer()
             .with_child(back)
+            .with_default_spacer()
+            .with_child(restart)
             .center()
     };
 
     Either::new(|s, _| s.combining == Combining::Running, running, finished)
-}
-
-// todo: create error
-fn combine_harmony_files(out: PathBuf, files: Vec<HarmonyMetadata>, sink: druid::ExtEventSink) {
-    let wtr = File::create(out)
-        .map(BufWriter::new)
-        .expect("Create file for output");
-    harmony::combine_files(wtr, &files).expect("Combine data into output");
-
-    sink.submit_command(FINISH_COMBINE, (), Target::Auto)
-        .expect("send finish combine cmd");
 }
 
 const fn plural(n: usize) -> &'static str {

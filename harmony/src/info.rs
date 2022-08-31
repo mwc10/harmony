@@ -37,8 +37,7 @@ pub fn collect_harmony_datafiles<P: AsRef<Path>>(dir: P) -> Vec<HarmonyMetadata>
 }
 
 fn is_possible_harmony(f: &DirEntry) -> bool {
-    f.file_type().is_file()
-        && f.path().extension().map_or(false, |ext| ext == "txt")
+    f.file_type().is_file() && f.path().extension().map_or(false, |ext| ext == "txt")
 }
 
 #[derive(Debug, Default)]
